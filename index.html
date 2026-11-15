@@ -628,13 +628,14 @@ function roll(){
   if(S.dayKey!==today()){S.dayKey=today();S.day={duels:0,wins:0,stickers:0};MIS.d.list.forEach(function(m){delete S.claimed[m.id];});}
   if(S.weekKey!==weekKey()){S.weekKey=weekKey();S.week={games:{},wins:0,rematch:0,top10:0};MIS.w.list.forEach(function(m){delete S.claimed[m.id];});}
   if(S.seasonKey!==monthKey()){if(S.seasonKey&&booted!==null)paySeason(S.seasonKey);S.seasonKey=monthKey();S.season={wins:0};MIS.s.list.forEach(function(m){delete S.claimed[m.id];});}
-  if(S.copa.key!==today()){payCopa(S.copa);S.copa={key:today(),best:{},tries:{},bots:{}};}
+  if(S.copa.key!==today()){var oc=S.copa;if(S.copaPend){payCopa(S.copaPend);delete S.copaPend;}S.copa={key:today(),best:{},tries:{},bots:{}};if(cloudWanted()&&Object.keys(oc.best||{}).length)S.copaPend=oc;else payCopa(oc);}
 }
+function cloudWanted(){return !!(window.supabase&&window.supabase.createClient)&&!(location.protocol==='file:'&&!/cloud=1/.test(location.search));}
 
 var COPA_PRIZE=[1000,600,400,150,150,150,150,150,150,150];
 var SEASON_REW={Bronce:100,Plata:300,Oro:600,Platino:1000,Leyenda:2000};
 function copaPrizeTxt(p){return p&&p<=10?fmt(COPA_PRIZE[p-1])+' diamantes':'';}
-function payCopa(old){var items=[],tot=0;Object.keys(old.best||{}).forEach(function(g){if(!GAMES[g]||old.best[g]==null)return;var L=old.bots&&old.bots[g];if(!L)return;var n=1;L.forEach(function(x){if(x.s>old.best[g])n++;});if(n<=10){items.push({g:g,pos:n,gems:COPA_PRIZE[n-1]});tot+=COPA_PRIZE[n-1];}});
+function payCopa(old){var items=[],tot=0;Object.keys(old.best||{}).forEach(function(g){if(!GAMES[g]||old.best[g]==null)return;var L=fieldOf(old,g);if(!L.length)return;var n=1;L.forEach(function(x){if(x.s>old.best[g])n++;});if(n<=10){items.push({g:g,pos:n,gems:COPA_PRIZE[n-1]});tot+=COPA_PRIZE[n-1];}});
   if(tot){S.gems+=tot;S.payNote=S.payNote||[];S.payNote.push({k:'copa',d:old.key,items:items,tot:tot});}}
 function paySeason(oldKey){var d=division(S.prestige),rw=SEASON_REW[d.tier]||0,i=0;for(var k=0;k<DIVS.length;k++)if(S.prestige>=DIVS[k][1])i=k;
   var np=i>0?DIVS[i-1][1]:0;S.gems+=rw;S.seasonHist=S.seasonHist||[];S.seasonHist.unshift({k:oldKey,tier:d.tier,name:d.name});if(S.seasonHist.length>12)S.seasonHist.length=12;
@@ -667,12 +668,17 @@ function when(t){var d=new Date(t),n=new Date(),y=new Date(n);y.setDate(n.getDat
 function hash(str){var h=2166136261;for(var i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
 function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 function bots(g){
-  if(!S.copa.bots[g]){var r=mulberry(hash(S.copa.key+g)),base=S.last[g]||GAMES[g].par,list=[];
+  if(!S.copa.bots[g]){var r=mulberry(hash(S.copa.key+g)),par=GAMES[g].par,base=Math.max(par*0.6,Math.min(par*1.6,S.last[g]||par)),list=[];
     for(var i=0;i<49;i++){var p=RIVALS[(i*7+hash(g))%RIVALS.length];list.push({n:p[0]+(i>=RIVALS.length?String(i):''),i:p[1],c:p[2],s:Math.round(base*(0.45+r()*1.15)/10)*10});}
     list.sort(function(a,b){return b.s-a.s;});S.copa.bots[g]=list;save();}
   return S.copa.bots[g];
 }
-function copaPos(g){var b=S.copa.best[g];if(b==null)return null;var n=1;bots(g).forEach(function(x){if(x.s>b)n++;});return n;}
+var CUP={key:'',G:{}};
+function realOf(c,g){var me=null;try{me=cloud.user&&cloud.user.id;}catch(e){}var src=c.real||(c.key===CUP.key?CUP.G:{});return (src[g]||[]).filter(function(x){return x.u!==me;}).slice(0,200);}
+function fieldOf(c,g){var R=realOf(c,g),B=c===S.copa?bots(g):((c.bots&&c.bots[g])||[]);var L=R.map(function(x){return {n:x.n,a:x.a,s:x.s,real:1};}).concat(B.slice(0,Math.max(0,49-R.length)));L.sort(function(a,b){return b.s-a.s;});return L;}
+function fieldN(g){return fieldOf(S.copa,g).length+1;}
+function copaPos(g){var b=S.copa.best[g];if(b==null)return null;var n=1;fieldOf(S.copa,g).forEach(function(x){if(x.s>b)n++;});return n;}
+function avKeyImg(k,n,sz){var s0=null;try{s0=avSrc(k);}catch(e){}return s0?'<img src="'+s0+'" alt="" style="width:'+sz+'px;height:'+sz+'px;border-radius:50%;object-fit:cover;object-position:top;background:#3a1a4a">':av(friendIni(n),fcol(n),sz);}
 
 /* ======================= UI COMÚN ======================= */
 var $=function(id){return document.getElementById(id);};
@@ -771,14 +777,14 @@ function renderHistorial(){
 }
 
 /* ======================= COMPETICIONES ======================= */
-var compTab='torneos',openCopa=null,rankTab='semana';
+var compTab='torneos',openCopa=null,rankTab='rivales';
 function lbRows(g){
-  var list=bots(g),best=S.copa.best[g],rows=[],meIn=false;
+  var list=fieldOf(S.copa,g),best=S.copa.best[g],rows=[],meIn=false;
   for(var i=0;i<list.length&&rows.length<5;i++){if(best!=null&&!meIn&&best>=list[i].s){rows.push({me:1,p:rows.length+1,s:best});meIn=true;continue;}rows.push({p:rows.length+1,b:list[i]});}
   var h='<ol class="list lb" style="margin-top:4px">';
   rows.forEach(function(r){
     if(r.me)h+='<li class="me"><span class="pos">'+r.p+'</span><img src="'+myAvatar()+'" alt="" style="width:32px;height:32px;border-radius:50%"><span class="grow">'+myAlias()+' (tú)</span><span class="sc">'+fmt(r.s)+'</span></li>';
-    else h+='<li><span class="pos" style="color:'+(r.p===1?'#F5C542':'#fff')+'">'+r.p+'</span>'+av(r.b.i,r.b.c,32)+'<span class="grow">'+r.b.n+'</span><span class="sc">'+fmt(r.b.s)+'</span></li>';
+    else h+='<li><span class="pos" style="color:'+(r.p===1?'#F5C542':'#fff')+'">'+r.p+'</span>'+(r.b.real?avKeyImg(r.b.a,r.b.n,32):av(r.b.i,r.b.c,32))+'<span class="grow">'+esc(r.b.n)+(r.b.real?' <span title="Jugador real" style="color:#5BE07D;font-size:10px">●</span>':'')+'</span><span class="sc">'+fmt(r.b.s)+'</span></li>';
   });
   if(!meIn)h+='<li class="me"><span class="pos">'+(copaPos(g)||'—')+'</span><img src="'+myAvatar()+'" alt="" style="width:32px;height:32px;border-radius:50%"><span class="grow">'+myAlias()+' (tú)</span><span class="sc">'+(best!=null?fmt(best):'Sin intento')+'</span></li>';
   return h+'</ol>';
@@ -791,11 +797,11 @@ function renderCompeticiones(){
     GKEYS.forEach(function(g){
       var tries=S.copa.tries[g]||0,pos=copaPos(g),can=tries<3&&S.gems>=COPA_FEE,isOpen=openCopa===g;
       h+='<div class="mc w'+(isOpen?' on':'')+'" style="flex-wrap:wrap">'+gmedal(g)+
-         '<div class="mid"><span class="mt"><b>Copa diaria · '+GAMES[g].short+'</b></span><span class="small" style="color:#E3E4FA">'+(pos?'Vas '+pos+'º de 50'+(pos<=10?' · <b style="color:var(--gold)">+'+copaPrizeTxt(pos)+'</b>':''):'Aún sin intento')+' · '+tries+'/3 intentos</span>'+
+         '<div class="mid"><span class="mt"><b>Copa diaria · '+GAMES[g].short+'</b></span><span class="small" style="color:#E3E4FA">'+(pos?'Vas '+pos+'º de '+fieldN(g)+(pos<=10?' · <b style="color:var(--gold)">+'+copaPrizeTxt(pos)+'</b>':''):'Aún sin intento')+' · '+tries+'/3 intentos</span>'+
          '<button class="gbtn" type="button" data-copa-open="'+g+'" aria-expanded="'+isOpen+'" style="align-self:flex-start;height:32px;font-size:12px;background:rgba(0,0,0,.25)">'+(isOpen?'Ocultar tabla':'Ver tabla')+'</button></div>'+
          '<div class="prz"><span class="v">'+gemIc()+'1.000</span><span class="l" style="font-size:12px">1.er premio</span>'+
          (tries>=3?'<button class="cta off" type="button" disabled>Hecho</button>':'<button class="cta'+(can?'':' off')+'" type="button" data-copa-play="'+g+'"'+(can?'':' aria-disabled="true"')+'>Jugar</button>')+'</div>'+
-         (isOpen?'<div style="flex-basis:100%">'+lbRows(g)+'<p class="note" style="margin-top:8px">Entrada '+fmt(COPA_FEE)+' diamantes por intento · cuenta tu mejor intento · premios en diamantes: 1.º 1.000 · 2.º 600 · 3.º 400 · 4.º-10.º 150 · se pagan a las 00:00 (al abrir la app al día siguiente). Rivales de práctica: hasta que haya ranking online, compites contra jugadores simulados de tu nivel.</p></div>':'')+'</div>';
+         (isOpen?'<div style="flex-basis:100%">'+lbRows(g)+'<p class="note" style="margin-top:8px">Entrada '+fmt(COPA_FEE)+' diamantes por intento · cuenta tu mejor intento · premios en diamantes: 1.º 1.000 · 2.º 600 · 3.º 400 · 4.º-10.º 150 · se pagan a las 00:00 (al abrir la app al día siguiente). Compites con jugadores reales de toda la app (los marcados con <span style="color:#5BE07D">●</span>). Mientras no haya 50, los huecos se rellenan con rivales de práctica.</p></div>':'')+'</div>';
     });
     var dv=division(S.prestige);
     h+='<div class="sec"><span>Torneo de temporada</span><span class="clk">'+ic('clock','#fff')+'<span data-clock="s">'+dur(secsTo(endMonth()))+'</span></span></div>';
@@ -803,7 +809,8 @@ function renderCompeticiones(){
        '<div class="prz"><span class="v">'+gemIc()+fmt(SEASON_REW[dv.tier])+'</span><span class="l" style="font-size:12px">fin de mes</span></div></div>'+
        '<div class="box alt" style="gap:6px"><b>Recompensas de temporada</b><div class="small">'+DIVS.map(function(x){return x[0]+': '+fmt(SEASON_REW[x[0]])+' 💎';}).join(' · ')+'</div></div>';
   } else {
-    h+=realRankHtml();
+    h+='<div class="seg" role="tablist" aria-label="Ranking" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:4px"><button type="button" role="tab" aria-selected="'+(rankTab!=='global')+'" data-rank="rivales">Mis rivales</button><button type="button" role="tab" aria-selected="'+(rankTab==='global')+'" data-rank="global">Mundial</button></div>';
+    h+=rankTab==='global'?globalRankHtml():realRankHtml();
   }
   $('v-competiciones').innerHTML=h;
 }
@@ -1205,11 +1212,11 @@ function srvOn(){return !!(sb&&cloud.user&&srv.ok);}
 function meId(){return cloud.user&&cloud.user.id;}
 function genCode(){var a='ABCDEFGHJKMNPQRSTUVWXYZ23456789',r='';for(var i=0;i<6;i++)r+=a[Math.floor(Math.random()*a.length)];return r;}
 function srvProfile(force,tries){if(!sb||!cloud.user)return Promise.resolve(false);tries=tries||0;if(!S.fcode){S.fcode=genCode();save();}
-  var row={id:meId(),alias:(S.alias||'Jugador').slice(0,16),avatar:myAvKey(),level:S.level,code:S.fcode,updated_at:new Date().toISOString()};
-  var str=JSON.stringify([row.id,row.alias,row.avatar,row.level,row.code]);if(!force&&str===srv.lastProf)return Promise.resolve(true);
-  return sb.from('profiles').upsert(row).then(function(r){if(r.error){if(/duplicate|unique/i.test(r.error.message)&&tries<3){S.fcode=genCode();save();return srvProfile(true,tries+1);}return false;}srv.lastProf=str;return true;});}
+  var row={id:meId(),alias:(S.alias||'Jugador').slice(0,16),avatar:myAvKey(),level:S.level,code:S.fcode,updated_at:new Date().toISOString()};if(!srv.noPrest){row.prestige=Math.max(0,S.prestige|0);row.season=monthKey();}
+  var str=JSON.stringify([row.id,row.alias,row.avatar,row.level,row.code,row.prestige,row.season]);if(!force&&str===srv.lastProf)return Promise.resolve(true);
+  return sb.from('profiles').upsert(row).then(function(r){if(r.error){if(!srv.noPrest&&/prestige|season/i.test(r.error.message)){srv.noPrest=true;return srvProfile(true,tries);}if(/duplicate|unique/i.test(r.error.message)&&tries<3){S.fcode=genCode();save();return srvProfile(true,tries+1);}return false;}srv.lastProf=str;return true;});}
 function srvStart(){if(!sb||!cloud.user)return;var uid=meId();if(srv.started===uid)return;srv.started=uid;
-  srvProfile(true).then(function(ok){if(!ok){srv.started=null;return;}srv.ok=true;srvMigrate().then(function(){srvRefreshNow();});srvRealtime();
+  srvProfile(true).then(function(ok){if(!ok){srv.started=null;return;}srv.ok=true;if(!EV.open){EV.open=1;track('open');}srvMigrate().then(function(){srvRefreshNow();});srvRealtime();
     if(!srv.iv){srv.iv=setInterval(function(){if(document.visibilityState==='visible')srvRefresh();},45000);document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')srvRefresh();});}
     try{render();}catch(e){}});}
 function srvStop(){srv.ok=false;srv.started=null;srv.first=true;srv.seenIn={};srv.seenAns={};srv.seenReq={};srv.inbox=[];if(srv.ch){try{sb.removeChannel(srv.ch);}catch(e){}srv.ch=null;}}
@@ -1229,7 +1236,40 @@ async function srvRefreshNow(){if(!srvOn())return;var me=meId();try{
   var uids=Object.keys(U),pr=uids.length?await sb.from('profiles').select('id,alias,avatar,level').in('id',uids):{data:[]};
   var P={};(pr.data||[]).forEach(function(x){P[x.id]=x;});
   srvMerge({acc:acc,pend:pend,circles:cr.data||[],members:mr.data||[],ch:chs,res:rs.data||[],ds:ds.data||[],P:P,me:me});
-}catch(e){}}
+}catch(e){}srvCupFetch();}
+/* ======================= FASE 3: COPA REAL, RANKING GLOBAL, DATOS ======================= */
+function srvCup(g){if(!srvOn())return;sb.from('cup_scores').upsert({day:S.copa.key,game:g,user_id:meId(),score:S.copa.best[g]||0,tries:S.copa.tries[g]||1,updated_at:new Date().toISOString()}).then(function(r){if(!r.error)srvCupFetch();});}
+async function cupGroup(rows){var U={},G={},P={};rows.forEach(function(x){U[x.user_id]=1;});var ids=Object.keys(U).slice(0,300);
+  if(ids.length){var p=await sb.from('profiles').select('id,alias,avatar').in('id',ids);(p.data||[]).forEach(function(x){P[x.id]=x;});}
+  rows.forEach(function(x){var L=G[x.game]=G[x.game]||[];if(L.length<200)L.push({u:x.user_id,n:P[x.user_id]?P[x.user_id].alias:'Jugador',a:P[x.user_id]?P[x.user_id].avatar:'',s:x.score});});return G;}
+var cupBusy=false;
+async function srvCupFetch(){if(!srvOn()||cupBusy)return;cupBusy=true;try{
+  if(S.copaPend){var od=S.copaPend,r0=await sb.from('cup_scores').select('game,user_id,score').eq('day',od.key).order('score',{ascending:false}).limit(1000);
+    if(!r0.error){od.real=await cupGroup(r0.data||[]);if(S.copaPend===od){payCopa(od);delete S.copaPend;save();setTimeout(showPayNotes,300);}}
+    else if(/cup_scores/i.test(r0.error.message)){payCopa(od);delete S.copaPend;save();}}
+  var r=await sb.from('cup_scores').select('game,user_id,score').eq('day',S.copa.key).order('score',{ascending:false}).limit(1000);
+  if(!r.error){var G=await cupGroup(r.data||[]),sig=JSON.stringify(G),chg=sig!==CUP.sig;CUP={key:S.copa.key,G:G,sig:sig};if(chg&&view==='competiciones'&&compTab==='torneos'&&!current&&$('modal').hidden)render();}
+}catch(e){}cupBusy=false;}
+setTimeout(function(){if(S&&S.copaPend&&!srvOn()){payCopa(S.copaPend);delete S.copaPend;save();showPayNotes();}},25000);
+var GR={t:0,list:null,pos:null,n:0,busy:false};
+async function grFetch(){if(!srvOn()||GR.busy)return;GR.busy=true;try{await srvProfile(false);var mk=monthKey();
+  var r=await sb.from('profiles').select('id,alias,avatar,level,prestige').eq('season',mk).order('prestige',{ascending:false}).limit(50);
+  if(!r.error){GR.list=r.data||[];var c=await sb.from('profiles').select('id',{count:'exact',head:true}).eq('season',mk).gt('prestige',S.prestige|0);var t=await sb.from('profiles').select('id',{count:'exact',head:true}).eq('season',mk);GR.pos=(c.count||0)+1;GR.n=t.count||GR.list.length;GR.err=0;}else GR.err=1;GR.t=Date.now();
+}catch(e){GR.err=1;GR.t=Date.now();}GR.busy=false;if(view==='competiciones'&&compTab==='ranking'&&rankTab==='global'&&!current)render();}
+function globalRankHtml(){var h='<div class="sec"><span>Ranking mundial · '+['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][new Date().getMonth()]+'</span><span class="small">Por prestigio de temporada</span></div>';
+  if(!srvOn())return h+'<div class="box alt" style="text-align:center;gap:10px">'+medal3('podio')+'<div class="t2">Sin conexión</div><div class="small">El ranking mundial necesita internet. Vuelve a mirar en un rato.</div></div>';
+  if(Date.now()-GR.t>60000)setTimeout(grFetch,0);
+  if(!GR.list)return h+'<div class="box alt" style="text-align:center">Cargando ranking…</div>';
+  if(GR.err&&!GR.list.length)return h+'<div class="box alt" style="text-align:center">No se ha podido cargar el ranking. Prueba más tarde.</div>';
+  var me=meId(),meIn=false;h+='<ol class="list lb">';
+  GR.list.forEach(function(x,i){var isMe=x.id===me;if(isMe)meIn=true;h+='<li class="'+(isMe?'me':'')+'"><span class="pos" style="color:'+(i<3?'#F5C542':'#fff')+'">'+(i===0?'👑':(i+1))+'</span>'+(isMe?'<img src="'+myAvatar()+'" alt="" style="width:34px;height:34px;border-radius:50%">':avKeyImg(x.avatar,x.alias,34))+'<span class="grow">'+esc(isMe?myAlias():x.alias)+(isMe?' (tú)':'')+'<br><span class="small">Nivel '+(isMe?S.level:x.level)+' · '+division(isMe?S.prestige:x.prestige).name+'</span></span><span class="sc">'+fmt(isMe?S.prestige:x.prestige)+'</span></li>';});
+  if(!meIn)h+='<li class="me"><span class="pos">'+(GR.pos||'—')+'</span><img src="'+myAvatar()+'" alt="" style="width:34px;height:34px;border-radius:50%"><span class="grow">'+esc(myAlias())+' (tú)<br><span class="small">Nivel '+S.level+' · '+division(S.prestige).name+'</span></span><span class="sc">'+fmt(S.prestige)+'</span></li>';
+  return h+'</ol><p class="note">'+fmt(GR.n||0)+' jugadores esta temporada. El prestigio se gana jugando duelos, retos y copas.</p>';}
+var EVQ=[],EVT=0,EV={open:0};
+function track(name,o){if(!cloudWanted())return;o=o||{};EVQ.push({name:name,game:o.game||null,mode:o.mode||null,value:o.value==null?null:Math.round(o.value),meta:o.meta||null});if(EVQ.length>60)EVQ.splice(0,EVQ.length-60);clearTimeout(EVT);EVT=setTimeout(evFlush,EVQ.length>=10?100:15000);}
+function evFlush(){if(!sb||!cloud.user||!EVQ.length)return;var b=EVQ.splice(0,EVQ.length),uid=cloud.user.id;b.forEach(function(x){x.user_id=uid;});
+  sb.from('events').insert(b).then(function(r){if(r.error&&!/events|schema cache|does not exist/i.test(r.error.message))EVQ=b.concat(EVQ).slice(-60);});}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')evFlush();});
 function friendByUid(uid){var F=friends(),hit=null;Object.keys(F).forEach(function(k){if(F[k].uid===uid)hit=k;});return hit;}
 function srvFriend(uid,p){if(!p)return null;var F=friends(),k=friendByUid(uid),nk=fkey(p.alias);
   if(k&&k!==nk&&!F[nk]){F[nk]=F[k];delete F[k];k=nk;}
@@ -1274,7 +1314,7 @@ function srvShowReto(n){var reto=srv.pendReto;if(!reto||!reto.length)return;if(!
       '<div class="row" style="gap:12px;background:rgba(0,0,0,.25);border-radius:14px;padding:10px 14px"><img src="'+IMG[q.g]+'" alt="" style="width:56px;height:56px;border-radius:12px"><div style="text-align:left"><b>'+GAMES[q.g].short+'</b><div class="small">Tienes que superar <b style="color:#fff;font-size:17px">'+fmt(q.s)+'</b></div></div></div>'+
       '<span class="small">Misma partida para los dos. <b style="color:#FFE08A">Solo tienes un intento</b>: si sales a mitad, cuenta como 0.</span>'+(reto.length>1?'<span class="small">Tienes '+reto.length+' retos nuevos: los demás están en Competiciones → Retos.</span>':'')+
       '<button class="cta full shine" type="button" data-reto-play="'+q.key+'">Aceptar el reto</button><button class="cta ghost full" type="button" data-act="closeModal">Luego</button></div>','Reto de '+q.n);}}
-async function srvSendReto(entry,toUid,circleSid){if(!srvOn())return false;var r=await sb.from('challenges').insert({from_id:meId(),to_id:toUid||null,circle_id:circleSid||null,game:entry.g,seed:entry.seed,from_score:entry.mine}).select('id').single();
+async function srvSendReto(entry,toUid,circleSid){if(!srvOn())return false;track('reto',{game:entry.g,value:entry.mine});var r=await sb.from('challenges').insert({from_id:meId(),to_id:toUid||null,circle_id:circleSid||null,game:entry.g,seed:entry.seed,from_score:entry.mine}).select('id').single();
   if(r.error||!r.data)return false;entry.sid=r.data.id;entry.id=r.data.id;entry.key='o_'+r.data.id;save();return true;}
 function srvResult(sid,score){if(!srvOn()||!sid)return;sb.from('challenge_results').upsert({challenge_id:sid,user_id:meId(),score:score|0,updated_at:new Date().toISOString()}).then(function(){});}
 function srvDaily(c){if(!srvOn()||!c||!c.sid)return;var D=cdaily(c),m=D.sc[fkey(myAlias())];sb.from('daily_scores').upsert({circle_id:c.sid,day:D.d,user_id:meId(),score:m?m.s:0,tries:c.daily.t||0,updated_at:new Date().toISOString()}).then(function(){});}
@@ -1607,7 +1647,7 @@ var cache={},current=null,ctx=null,frame=null,sheetTimer=null,stage=$('stage'),g
 function source(id){if(!cache[id]){var bin=atob(window.GAME_SRC[id]),bytes=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);cache[id]=new TextDecoder('utf-8').decode(bytes);}return cache[id];}
 function pickRival(){var p=RIVALS[1+Math.floor(Math.random()*(RIVALS.length-1))];return {name:p[0],ini:p[1],color:p[2]};}
 function charge(st){if(!st||st.cur==='none')return true;if(st.cur==='gems'){if(S.gems<st.fee)return false;S.gems-=st.fee;}else{if(S.cash<st.fee)return false;S.cash-=st.fee;}save();return true;}
-function mount(){
+function mount(){if(ctx&&!ctx.t0)ctx.t0=Date.now();
   stage.innerHTML='';$('sheet').hidden=true;clearTimeout(sheetTimer);ctx.ended=false;
   var f=document.createElement('iframe');f.title=GAMES[current].name;f.setAttribute('allow','autoplay; fullscreen');f.srcdoc=withSeed(source(current),ctx.seed);
   f.addEventListener('load',function(){try{f.contentWindow.focus();}catch(e){}});stage.appendChild(f);frame=f;
@@ -1623,7 +1663,7 @@ function launch(g,mode,stake,rival,fixed,seed,extra){
   if(mode==='copa'){
     if((S.copa.tries[g]||0)>=3){toast('Ya has usado tus 3 intentos de hoy');return;}
     if(S.gems<COPA_FEE){toast('Necesitas '+fmt(COPA_FEE)+' diamantes: consíguelos en la Tienda');return;}
-    S.gems-=COPA_FEE;S.copa.tries[g]=(S.copa.tries[g]||0)+1;save();
+    bots(g);S.gems-=COPA_FEE;S.copa.tries[g]=(S.copa.tries[g]||0)+1;save();
   } else if(!charge(stake)){toast('Saldo insuficiente');return;}
   ctx={game:g,mode:mode,stake:stake||STAKES[0],rival:rival||pickRival(),fixed:fixed==null?null:fixed,seed:seed||newSeed()};
   if(extra)for(var xk in extra)ctx[xk]=extra[xk];
@@ -1653,8 +1693,9 @@ function onEnd(score){
     if(win&&ctx.stake.cur==='cash'){S.cash+=ctx.stake.prize;prize='+'+money(ctx.stake.prize);}
     if(ctx.mode==='rematch'){if(win){S.rival.me++;S.week.rematch=1;}else S.rival.him++;}
   }
-  if(copa){var before=copaPos(g);if(S.copa.best[g]==null||score>S.copa.best[g])S.copa.best[g]=score;var p=copaPos(g);if(p<=10){S.week.top10=1;if(!S.copaTopDay||S.copaTopDay!==today()){S.copaTopDay=today();S.stats.copa10++;}}entry.pos=p;copaLine=(before&&p<before?'Subes al '+p+'º':'Vas '+p+'º')+' de 50 en la copa';xp=30;pr=10;}
+  if(copa){var before=copaPos(g);if(S.copa.best[g]==null||score>S.copa.best[g])S.copa.best[g]=score;var p=copaPos(g);if(p<=10){S.week.top10=1;if(!S.copaTopDay||S.copaTopDay!==today()){S.copaTopDay=today();S.stats.copa10++;}}entry.pos=p;copaLine=(before&&p<before?'Subes al '+p+'º':'Vas '+p+'º')+' de '+fieldN(g)+' en la copa';srvCup(g);xp=30;pr=10;}
   addXP(xp);S.prestige+=pr;
+  track('play',{game:g,mode:ctx.circleDaily?'dia':ctx.mode,value:score,meta:{dur:Date.now()-(ctx.t0||Date.now())}});setTimeout(function(){srvProfile(false);},1500);
   S.hist.unshift(entry);if(S.hist.length>40)S.hist.length=40;
   save();
   if(ctx.mode==='reto'&&ctx.retoKey){var rr=retoByKey(ctx.retoKey);if(rr){rr.tp=Date.now();if(rr.mine==null||score>rr.mine)rr.mine=score;save();if(rr.sid)srvResult(rr.sid,rr.mine);}}
