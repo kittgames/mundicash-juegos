@@ -933,12 +933,16 @@ function fallbackCopy(t){var a=document.createElement('textarea');a.value=t;docu
 function sendReto(){
   if(!ctx||!ctx.result||!ctx.seed)return;var g=current,sc=ctx.result.score,seed=ctx.seed,fk=ctx.forFriend,fr=fk&&S.friends&&S.friends[fk],cc=ctx.forCircle&&circles()[ctx.forCircle];
   needAlias(function(){
-    var id=rid(),me=myAlias();
-    retos().unshift({key:'o_'+id,id:id,dir:'out',g:g,seed:seed,mine:sc,t:Date.now(),ans:[]});if(S.retos.length>30)S.retos.length=30;save();
-    var url=baseUrl()+'#reto='+enc({v:1,id:id,g:g,seed:seed,n:me,s:sc,a:myAvKey()});
+    var id=rid(),me=myAlias(),entry={key:'o_'+id,id:id,dir:'out',g:g,seed:seed,mine:sc,t:Date.now(),ans:[]};
+    retos().unshift(entry);if(S.retos.length>60)S.retos.length=60;save();
+    var srvTarget=srvOn()&&((fr&&fr.uid)||(cc&&cc.sid));
+    var go=function(sent){
+    var url=baseUrl()+'#reto='+enc({v:1,id:entry.id,g:g,seed:seed,n:me,s:sc,a:myAvKey()});
     var txt=cc?'🔥 Reto para «'+cc.name+'»: '+me+' ha hecho '+fmt(sc)+' en '+GAMES[g].short+'. Misma partida para todos. ¿Quién me supera?':(fr?fr.n+', ':'')+me+' te reta en '+GAMES[g].short+': '+fmt(sc)+' puntos. Misma partida para los dos. ¿Me superas? 💪';
     if(fr&&fr.ph){window.open('https://wa.me/'+fr.ph+'?text='+encodeURIComponent(txt+'\n'+url),'_blank','noopener');toast('Abriendo el chat de '+fr.n+' en WhatsApp');return;}
-    shareModal(cc?'Reta al círculo «'+esc(cc.name)+'»':(fr?'Reta a '+esc(fr.n):'Reta a un amigo'),txt,url,'reto',{g:g,score:sc,eye:cc?'Reto para «'+cc.name+'»':'Te reto',line:cc?'¿Quién me supera?':'¿Me superas?'});
+    shareModal(sent?'✅ Reto enviado · avisa por WhatsApp si quieres':(cc?'Reta al círculo «'+esc(cc.name)+'»':(fr?'Reta a '+esc(fr.n):'Reta a un amigo')),txt,url,'reto',{g:g,score:sc,eye:cc?'Reto para «'+cc.name+'»':'Te reto',line:cc?'¿Quién me supera?':'¿Me superas?'});
+    };
+    if(srvTarget&&!ctx.srvSent){ctx.srvSent=true;srvSendReto(entry,fr&&fr.uid,cc&&cc.sid).then(function(ok){if(ok)toast('✅ Reto enviado a '+(cc?'«'+cc.name+'»':fr.n)+': le aparecerá en la app');go(ok);});}else go(false);
   });
 }
 function sendResp(){
@@ -991,7 +995,7 @@ function incoming(kind,p){
       '<button class="cta ghost full" type="button" data-act="goRetos">Ver mis retos</button></div>','Respuesta de '+n);
   }
 }
-function playReto(key){var r=retoByKey(key);if(!r)return;if(r.dir==='in'&&(r.tried||r.mine!=null)){toast('Este reto ya lo has jugado: solo hay un intento. ¡Lanza uno nuevo!');return;}r.tried=1;r.mine=0;r.tp=Date.now();save();launch(r.g,'reto',STAKES[0],{name:r.them,ini:friendIni(r.them),color:fcol(r.them)},r.his,r.seed,{retoKey:key});}
+function playReto(key){var r=retoByKey(key);if(!r)return;if(r.dir==='in'&&(r.tried||r.mine!=null)){toast('Este reto ya lo has jugado: solo hay un intento. ¡Lanza uno nuevo!');return;}r.tried=1;r.mine=0;r.tp=Date.now();save();if(r.sid)srvResult(r.sid,0);launch(r.g,'reto',STAKES[0],{name:r.them,ini:friendIni(r.them),color:fcol(r.them)},r.his,r.seed,{retoKey:key});}
 function retosHtml(){
   var L=retos(),h='<div class="box" style="align-items:center;text-align:center">'+medal3('duelos')+'<div class="t1">Reta a tus amigos</div><div class="small">Juega una partida y envía el enlace por WhatsApp. Tu amigo jugará exactamente la misma partida y te podrá contestar.</div>'+
     '<button class="cta full shine" type="button" data-act="newReto">Crear un reto</button>'+(S.alias?'<span class="small">Tu alias: <b style="color:#fff">'+esc(S.alias)+'</b> · <button class="gbtn" type="button" data-act="editAlias" style="height:28px;font-size:12px">Cambiar</button></span>':'')+'</div>';
@@ -1132,11 +1136,11 @@ var SB_URL='https://xqhxmboiplfjcvqxveav.supabase.co',SB_KEY='sb_publishable_HUY
 var sb=null,cloud={user:null,ready:false,last:0,pushT:0,lastStr:'',err:'',pulledFor:null};
 function appURL(){return location.origin+location.pathname;}
 function hasProgress(st){return !!st&&((st.level||1)>1||(st.xp||0)>0||Object.keys(st.friends||{}).length>0||Object.keys((st.sk&&st.sk.own)||{}).length>0);}
-function cloudInit(){if(!window.supabase||!window.supabase.createClient)return;
+function cloudInit(){if(!window.supabase||!window.supabase.createClient)return;if(location.protocol==='file:'&&!/cloud=1/.test(location.search))return;
   try{sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:'mc-auth'}});}catch(e){sb=null;return;}
   sb.auth.onAuthStateChange(function(ev,session){var u=session&&session.user||null;cloud.user=u;
     if(/access_token=|error_description=/.test(location.hash)&&history.replaceState)history.replaceState(null,'','#games');
-    if(u&&ev==='SIGNED_IN')setTimeout(function(){cloudPull(!u.is_anonymous);},0);
+    if(u&&ev==='SIGNED_IN'){if(srv.started&&srv.started!==u.id)srvStop();setTimeout(function(){cloudPull(!u.is_anonymous);},0);}
     if(ev==='USER_UPDATED'){if(u&&!u.is_anonymous)toast('¡Email vinculado! Ya puedes entrar desde otro móvil');cloudPush(true);}
     try{renderAcct();}catch(e){}});
   sb.auth.getSession().then(function(r){var ss=r&&r.data&&r.data.session;
@@ -1146,7 +1150,7 @@ function cloudInit(){if(!window.supabase||!window.supabase.createClient)return;
   });
   document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')cloudPush(false);});
 }
-function cloudPull(fromLogin){var u=cloud.user;if(!sb||!u||cloud.pulledFor===u.id)return;cloud.pulledFor=u.id;
+function cloudPull(fromLogin){var u=cloud.user;if(!sb||!u||cloud.pulledFor===u.id)return;cloud.pulledFor=u.id;setTimeout(srvStart,1500);
   sb.from('player_state').select('state,updated_at').eq('user_id',u.id).maybeSingle().then(function(r){
     cloud.ready=true;if(r.error){cloud.err=r.error.message;renderAcct();return;}cloud.err='';
     var row=r.data;
@@ -1170,10 +1174,10 @@ function cloudPush(force){if(!sb||!cloud.user||!cloud.ready)return;var st=backup
   if(!q.error&&q.data&&(+q.data.ts||0)>(S.syncTs||0)){cloud.pulledFor=null;cloudPull(false);return;}
   sb.from('player_state').upsert({user_id:cloud.user.id,state:st,alias:S.alias||null,level:S.level,updated_at:new Date().toISOString()}).then(function(r){
     if(r.error){cloud.err=r.error.message;clearTimeout(cloud.retryT);cloud.retryT=setTimeout(function(){cloudPush(true);},30000);}else{cloud.lastStr=str;cloud.last=Date.now();cloud.err='';S.syncTs=t;try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}renderAcct();});});}
-function cloudSchedule(){if(!sb||!cloud.user)return;clearTimeout(cloud.pushT);cloud.pushT=setTimeout(function(){cloudPush(false);},3000);}
+function cloudSchedule(){if(!sb||!cloud.user)return;clearTimeout(cloud.pushT);cloud.pushT=setTimeout(function(){cloudPush(false);if(srv.ok)srvProfile(false);},3000);}
 function agoTxt(t){if(!t)return '';var d=Math.round((Date.now()-t)/1000);return d<10?'ahora mismo':d<60?'hace '+d+' s':d<3600?'hace '+Math.round(d/60)+' min':'hace '+Math.round(d/3600)+' h';}
 function acctHtml(){var u=cloud.user,h='<div class="box acct" id="acctBox">';
-  if(!sb){h+='<div class="row">'+'<span style="font-size:30px">💾</span><div class="grow"><b>Progreso en este móvil</b><div class="small">No hay conexión con la nube. Usa la copia de seguridad para no perderlo.</div></div></div>';}
+  if(!sb){h+='<div class="row">'+'<span style="font-size:30px">💾</span><div class="grow"><b>Progreso en este móvil</b><div class="small">No hay conexión con la nube. Usa la copia de seguridad para no perderlo.</div></div></div><button class="cta ghost full" type="button" data-act="backup">Copia de seguridad</button>';}
   else if(!u||!cloud.ready){h+='<div class="row"><span style="font-size:30px">☁️</span><div class="grow"><b>Conectando con la nube…</b><div class="small">'+(cloud.err?'Sin conexión ahora mismo: tu progreso sigue guardado en este móvil.':'Un segundo.')+'</div></div></div>';}
   else if(u.is_anonymous){h+='<div class="row"><span style="font-size:30px">☁️</span><div class="grow"><b>Tu progreso se guarda en la nube</b><div class="small">'+(cloud.err?'⚠️ No se ha podido guardar ahora, lo reintentamos solo':'Guardado '+agoTxt(cloud.last))+'. Vincula tu email para no perderlo nunca y jugar en otro móvil.</div></div></div>'+
     '<button class="cta full shine" type="button" data-act="acctLink">Vincular mi email</button><div class="row" style="gap:8px"><button class="cta ghost grow" type="button" data-act="acctLogin">Ya tengo cuenta</button><button class="cta ghost grow" type="button" data-act="backup">Copia</button></div>';}
@@ -1192,8 +1196,105 @@ function acctSend(kind){var e=(($('acctEmail')||{}).value||'').trim(),m=$('acctM
   pr.then(function(r){if(!m)return;if(r.error){var t=r.error.message||'';m.innerHTML='<span style="color:#FFB4A8">'+(/rate|limit/i.test(t)?'Has pedido demasiados emails seguidos. Prueba en unos minutos.':/already|registered|exists/i.test(t)?'Ese email ya tiene cuenta: usa «Ya tengo cuenta».':/not found|signups not allowed|Signups/i.test(t)?'No hay ninguna cuenta con ese email.':'No se ha podido enviar: '+esc(t))+'</span>';return;}
     m.innerHTML='<b style="color:#7DF0A0">📬 ¡Enviado! Abre el email en este móvil y toca el enlace.</b><br>Si no lo ves, mira en spam.';});}
 function acctOut(){openModal('<div style="display:flex;flex-direction:column;gap:12px;text-align:center"><div class="t1">¿Cerrar sesión?</div><div class="small">Tu progreso queda guardado en tu cuenta. En este móvil se empezará de cero hasta que vuelvas a entrar.</div><button class="cta full" type="button" data-act="acctOutGo">Cerrar sesión</button><button class="cta ghost full" type="button" data-act="closeModal">Cancelar</button></div>','Cerrar sesión');}
-function acctOutGo(){cloudPush(true);setTimeout(function(){sb.auth.signOut().then(function(){S=fresh();S.onb=1;try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}cloud.pulledFor=null;cloud.lastStr='';closeModal();skCache={};render();
+function acctOutGo(){cloudPush(true);srvStop();setTimeout(function(){sb.auth.signOut().then(function(){S=fresh();S.onb=1;try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}cloud.pulledFor=null;cloud.lastStr='';closeModal();skCache={};render();
   sb.auth.signInAnonymously().then(function(r2){if(!r2.error){cloud.user=r2.data.user;cloudPull(false);}});toast('Sesión cerrada');});},400);}
+
+/* ======================= FASE 2: SOCIAL EN SERVIDOR ======================= */
+var srv={ok:false,started:null,ch:null,refT:0,lastProf:'',inbox:[],seenIn:{},seenAns:{},seenReq:{},first:true,iv:0};
+function srvOn(){return !!(sb&&cloud.user&&srv.ok);}
+function meId(){return cloud.user&&cloud.user.id;}
+function genCode(){var a='ABCDEFGHJKMNPQRSTUVWXYZ23456789',r='';for(var i=0;i<6;i++)r+=a[Math.floor(Math.random()*a.length)];return r;}
+function srvProfile(force,tries){if(!sb||!cloud.user)return Promise.resolve(false);tries=tries||0;if(!S.fcode){S.fcode=genCode();save();}
+  var row={id:meId(),alias:(S.alias||'Jugador').slice(0,16),avatar:myAvKey(),level:S.level,code:S.fcode,updated_at:new Date().toISOString()};
+  var str=JSON.stringify([row.id,row.alias,row.avatar,row.level,row.code]);if(!force&&str===srv.lastProf)return Promise.resolve(true);
+  return sb.from('profiles').upsert(row).then(function(r){if(r.error){if(/duplicate|unique/i.test(r.error.message)&&tries<3){S.fcode=genCode();save();return srvProfile(true,tries+1);}return false;}srv.lastProf=str;return true;});}
+function srvStart(){if(!sb||!cloud.user)return;var uid=meId();if(srv.started===uid)return;srv.started=uid;
+  srvProfile(true).then(function(ok){if(!ok){srv.started=null;return;}srv.ok=true;srvMigrate().then(function(){srvRefreshNow();});srvRealtime();
+    if(!srv.iv){srv.iv=setInterval(function(){if(document.visibilityState==='visible')srvRefresh();},45000);document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')srvRefresh();});}
+    try{render();}catch(e){}});}
+function srvStop(){srv.ok=false;srv.started=null;srv.first=true;srv.seenIn={};srv.seenAns={};srv.seenReq={};srv.inbox=[];if(srv.ch){try{sb.removeChannel(srv.ch);}catch(e){}srv.ch=null;}}
+function srvRealtime(){if(srv.ch||!sb)return;srv.ch=sb.channel('mc-'+meId());['friend_requests','challenges','challenge_results','daily_scores','circle_members'].forEach(function(t){srv.ch.on('postgres_changes',{event:'*',schema:'public',table:t},function(){srvRefresh();});});srv.ch.subscribe();}
+function srvRefresh(){if(!srvOn())return;clearTimeout(srv.refT);srv.refT=setTimeout(srvRefreshNow,400);}
+async function srvRefreshNow(){if(!srvOn())return;var me=meId();try{
+  var fr=await sb.from('friend_requests').select('*').or('from_id.eq.'+me+',to_id.eq.'+me);if(fr.error)return;
+  var acc=[],pend=[];(fr.data||[]).forEach(function(x){var o=x.from_id===me?x.to_id:x.from_id;if(x.status==='accepted')acc.push(o);else if(x.status==='pending'&&x.to_id===me)pend.push(x);});
+  var cm=await sb.from('circle_members').select('circle_id').eq('user_id',me);var myC=(cm.data||[]).map(function(r){return r.circle_id;});
+  var cr=myC.length?await sb.from('circles').select('*').in('id',myC):{data:[]};
+  var mr=myC.length?await sb.from('circle_members').select('circle_id,user_id').in('circle_id',myC):{data:[]};
+  var ch=await sb.from('challenges').select('*').gte('created_at',new Date(Date.now()-14*864e5).toISOString()).order('created_at',{ascending:false}).limit(80);
+  var chs=ch.data||[],ids=chs.map(function(c){return c.id;});
+  var rs=ids.length?await sb.from('challenge_results').select('*').in('challenge_id',ids):{data:[]};
+  var ds=myC.length?await sb.from('daily_scores').select('*').in('circle_id',myC).eq('day',today()):{data:[]};
+  var U={};acc.forEach(function(u){U[u]=1;});pend.forEach(function(x){U[x.from_id]=1;});(mr.data||[]).forEach(function(m){U[m.user_id]=1;});chs.forEach(function(c){U[c.from_id]=1;});(rs.data||[]).forEach(function(r){U[r.user_id]=1;});delete U[me];
+  var uids=Object.keys(U),pr=uids.length?await sb.from('profiles').select('id,alias,avatar,level').in('id',uids):{data:[]};
+  var P={};(pr.data||[]).forEach(function(x){P[x.id]=x;});
+  srvMerge({acc:acc,pend:pend,circles:cr.data||[],members:mr.data||[],ch:chs,res:rs.data||[],ds:ds.data||[],P:P,me:me});
+}catch(e){}}
+function friendByUid(uid){var F=friends(),hit=null;Object.keys(F).forEach(function(k){if(F[k].uid===uid)hit=k;});return hit;}
+function srvFriend(uid,p){if(!p)return null;var F=friends(),k=friendByUid(uid),nk=fkey(p.alias);
+  if(k&&k!==nk&&!F[nk]){F[nk]=F[k];delete F[k];k=nk;}
+  if(!k){if(F[nk]&&!F[nk].uid)k=nk;else if(!F[nk]){addFriend(p.alias,p.avatar);k=nk;F[k].fav=true;}else return F[nk];}
+  var f=F[k];f.uid=uid;f.n=p.alias;if(p.avatar&&avSrc(p.avatar))f.a=p.avatar;return f;}
+function srvMerge(D){var me=D.me,P=D.P,alias=function(u){return u===me?myAlias():(P[u]?P[u].alias:'Jugador');},avk=function(u){return u===me?myAvKey():(P[u]?P[u].avatar:'');};
+  var notes=[];
+  D.acc.forEach(function(u){var was=!!friendByUid(u);var f=srvFriend(u,P[u]);if(f&&!was&&!srv.first)notes.push({k:'friend',n:f.n});});
+  srv.inbox=D.pend.map(function(x){return {id:x.id,uid:x.from_id,n:alias(x.from_id),a:avk(x.from_id)};});
+  srv.inbox.forEach(function(q){if(!srv.seenReq[q.id]){srv.seenReq[q.id]=1;notes.push({k:'req',n:q.n});}});
+  D.circles.forEach(function(c){var lk=null;Object.keys(circles()).forEach(function(k){if(circles()[k].sid===c.id||k===c.id)lk=k;});
+    var L=lk?circles()[lk]:(circles()[c.id]={id:c.id,sid:c.id,name:c.name,owner:alias(c.owner),members:[],t:Date.parse(c.created_at)||Date.now(),joined:true});
+    L.sid=c.id;L.name=c.name;L.owner=alias(c.owner);L.joined=true;
+    L.members=D.members.filter(function(m){return m.circle_id===c.id;}).map(function(m){return {n:alias(m.user_id),a:avk(m.user_id)||'',uid:m.user_id};});
+    L.members.forEach(function(m){if(m.uid!==me&&P[m.uid])srvFriend(m.uid,P[m.uid]);});});
+  D.ds.forEach(function(x){var L=null;Object.keys(circles()).forEach(function(k){if(circles()[k].sid===x.circle_id)L=circles()[k];});if(!L)return;var Dd=cdaily(L);
+    if(x.user_id===me){L.daily.t=Math.max(L.daily.t||0,x.tries||0);var mk=fkey(myAlias());if(!Dd.sc[mk]||x.score>Dd.sc[mk].s)Dd.sc[mk]={n:myAlias(),a:myAvKey(),s:x.score};}
+    else{var kk=fkey(alias(x.user_id)),cur=Dd.sc[kk];if(!cur||x.score>cur.s){if(cur&&x.score>cur.s&&!srv.first)notes.push({k:'daily',n:alias(x.user_id),s:x.score,c:L.name});Dd.sc[kk]={n:alias(x.user_id),a:avk(x.user_id)||'',s:x.score};}}});
+  var R=retos();
+  D.ch.forEach(function(c){var mine=D.res.filter(function(r){return r.challenge_id===c.id;});var cname=null;if(c.circle_id)Object.keys(circles()).forEach(function(k){if(circles()[k].sid===c.circle_id)cname=circles()[k].name;});
+    if(c.from_id===me){var r=null;R.forEach(function(x){if(x.dir==='out'&&(x.sid===c.id||x.id===c.id))r=x;});
+      if(!r){r={key:'o_'+c.id,id:c.id,sid:c.id,dir:'out',g:c.game,seed:+c.seed,mine:c.from_score,t:Date.parse(c.created_at)||Date.now(),ans:[]};R.push(r);}
+      mine.forEach(function(x){if(x.user_id===me)return;var n=alias(x.user_id),a=null;r.ans.forEach(function(y){if(fkey(y.n)===fkey(n))a=y;});
+        if(!a){a={n:n,s:x.score,t:Date.parse(x.updated_at)||Date.now()};r.ans.push(a);}else if(x.score!==a.s){a.s=x.score;a.t=Date.parse(x.updated_at)||Date.now();}
+        var sk=c.id+x.user_id+':'+x.score;if(!srv.seenAns[sk]){srv.seenAns[sk]=1;if(!srv.first&&x.score>0)notes.push({k:'ans',n:n,s:x.score,his:c.from_score,g:c.game});}});}
+    else{var n2=alias(c.from_id),key='i_'+c.id+'_'+n2,r2=retoByKey(key);
+      if(!r2){r2={key:key,id:c.id,sid:c.id,dir:'in',g:c.game,seed:+c.seed,them:n2,his:c.from_score,mine:null,t:Date.parse(c.created_at)||Date.now(),circ:cname};R.push(r2);}
+      if(!srv.seenIn[c.id]&&!r2.tried&&r2.mine==null&&!mine.some(function(x){return x.user_id===me;}))notes.push({k:'reto',key:key,n:n2,g:c.game,s:c.from_score,c:cname});
+      srv.seenIn[c.id]=1;r2.sid=c.id;
+      mine.forEach(function(x){if(x.user_id===me){r2.tried=1;if(r2.mine==null||x.score>r2.mine)r2.mine=x.score;}});
+      if(P[c.from_id])srvFriend(c.from_id,P[c.from_id]);}});
+  R.sort(function(a,b){return b.t-a.t;});if(R.length>60)R.length=60;
+  srv.first=false;save();try{render();}catch(e){}
+  srvNotify(notes);}
+function srvNotify(N){if(!N.length)return;var reto=N.filter(function(x){return x.k==='reto';});
+  N.forEach(function(x){if(x.k==='friend')toast('🤝 '+x.n+' ya es tu rival');else if(x.k==='req')toast('🙋 '+x.n+' quiere ser tu rival · míralo en tu Perfil');else if(x.k==='ans')toast((x.s>x.his?'😱 ':'😎 ')+x.n+' ha jugado tu reto en '+GAMES[x.g].short+': '+fmt(x.s)+' contra tus '+fmt(x.his));else if(x.k==='daily')toast('📅 '+x.n+' ha hecho '+fmt(x.s)+' en el reto del día de «'+x.c+'»');});
+  if(reto.length){srv.pendReto=reto;toast('⚔️ '+reto[0].n+' te ha retado en '+GAMES[reto[0].g].short);srvShowReto(0);}
+}
+function srvShowReto(n){var reto=srv.pendReto;if(!reto||!reto.length)return;if(!$('modal').hidden||current){if(n<60)setTimeout(function(){srvShowReto(n+1);},2000);return;}srv.pendReto=null;var q=reto[0];if(!retoByKey(q.key)||retoByKey(q.key).tried)return;{
+    openModal('<div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">'+av(friendIni(q.n),fcol(q.n),84,'border:4px solid #F5C542')+
+      '<span class="eye" style="color:var(--gold)">'+(q.c?'Reto en «'+esc(q.c)+'»':'Nuevo reto')+'</span><span class="t1" style="font-size:24px">'+esc(q.n)+' te reta</span>'+
+      '<div class="row" style="gap:12px;background:rgba(0,0,0,.25);border-radius:14px;padding:10px 14px"><img src="'+IMG[q.g]+'" alt="" style="width:56px;height:56px;border-radius:12px"><div style="text-align:left"><b>'+GAMES[q.g].short+'</b><div class="small">Tienes que superar <b style="color:#fff;font-size:17px">'+fmt(q.s)+'</b></div></div></div>'+
+      '<span class="small">Misma partida para los dos. <b style="color:#FFE08A">Solo tienes un intento</b>: si sales a mitad, cuenta como 0.</span>'+(reto.length>1?'<span class="small">Tienes '+reto.length+' retos nuevos: los demás están en Competiciones → Retos.</span>':'')+
+      '<button class="cta full shine" type="button" data-reto-play="'+q.key+'">Aceptar el reto</button><button class="cta ghost full" type="button" data-act="closeModal">Luego</button></div>','Reto de '+q.n);}}
+async function srvSendReto(entry,toUid,circleSid){if(!srvOn())return false;var r=await sb.from('challenges').insert({from_id:meId(),to_id:toUid||null,circle_id:circleSid||null,game:entry.g,seed:entry.seed,from_score:entry.mine}).select('id').single();
+  if(r.error||!r.data)return false;entry.sid=r.data.id;entry.id=r.data.id;entry.key='o_'+r.data.id;save();return true;}
+function srvResult(sid,score){if(!srvOn()||!sid)return;sb.from('challenge_results').upsert({challenge_id:sid,user_id:meId(),score:score|0,updated_at:new Date().toISOString()}).then(function(){});}
+function srvDaily(c){if(!srvOn()||!c||!c.sid)return;var D=cdaily(c),m=D.sc[fkey(myAlias())];sb.from('daily_scores').upsert({circle_id:c.sid,day:D.d,user_id:meId(),score:m?m.s:0,tries:c.daily.t||0,updated_at:new Date().toISOString()}).then(function(){});}
+async function srvMigrate(){if(!srvOn())return;var C=circles(),me=fkey(myAlias());for(var k in C){var c=C[k];if(c.sid||fkey(c.owner||'')!==me)continue;
+  var r=await sb.from('circles').insert({name:c.name,owner:meId()}).select('id').single();if(r.error||!r.data)continue;await sb.from('circle_members').insert({circle_id:r.data.id,user_id:meId()});
+  delete C[k];c.id=r.data.id;c.sid=r.data.id;c.daily=null;C[c.id]=c;}save();}
+async function srvAddByCode(code){code=String(code||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');var m=$('fcMsg');if(code.length<6){if(m)m.textContent='El código tiene 6 letras y números.';return;}
+  if(!srvOn()){if(m)m.textContent='Sin conexión ahora mismo. Prueba en un momento.';return;}
+  if(code===S.fcode){if(m)m.textContent='¡Ese es tu propio código! 😄';return;}
+  var p=await sb.from('profiles').select('id,alias,avatar').eq('code',code).maybeSingle();if(!p.data){if(m)m.textContent='No hay nadie con ese código. Revísalo.';return;}
+  var me=meId(),rev=await sb.from('friend_requests').select('id,status').eq('from_id',p.data.id).eq('to_id',me).maybeSingle();
+  var r=rev.data?await sb.from('friend_requests').update({status:'accepted'}).eq('id',rev.data.id):await sb.from('friend_requests').upsert({from_id:me,to_id:p.data.id,status:'pending'},{onConflict:'from_id,to_id'});
+  if(r.error){if(m)m.textContent='No se ha podido enviar. Prueba otra vez.';return;}
+  if(m)m.innerHTML=rev.data?'<b style="color:#7DF0A0">🤝 ¡'+esc(p.data.alias)+' ya es tu rival!</b>':'<b style="color:#7DF0A0">📨 Solicitud enviada a '+esc(p.data.alias)+'.</b> Cuando acepte, aparecerá en tus rivales.';srvRefresh();}
+function srvReq(id,ok){if(!srvOn())return;sb.from('friend_requests').update({status:ok?'accepted':'declined'}).eq('id',id).then(function(r){if(r.error){toast('No se ha podido responder');return;}srv.inbox=srv.inbox.filter(function(x){return x.id!==id;});toast(ok?'🤝 ¡Ya sois rivales!':'Solicitud rechazada');srvRefresh();try{render();}catch(e){}});}
+function codeModal(){openModal('<div style="display:flex;flex-direction:column;gap:12px"><div class="t1">Añadir por código</div>'+
+  '<div class="box alt" style="text-align:center;gap:4px"><span class="small">Tu código de rival</span><b style="font-size:30px;letter-spacing:.18em;font-family:Jost,sans-serif;color:var(--gold)">'+(S.fcode||'······')+'</b><span class="small">Pásaselo a tus amigos para que te añadan.</span><button class="cta ghost full" type="button" data-act="copyCode">Copiar mi código</button></div>'+
+  '<label class="small" for="fcIn">Código de tu amigo</label><input id="fcIn" maxlength="8" autocomplete="off" placeholder="ABC123" style="all:unset;box-sizing:border-box;width:100%;min-height:52px;padding:0 14px;border-radius:12px;background:rgba(0,16,48,.75);border:2px solid rgba(127,227,255,.45);font-size:22px;letter-spacing:.15em;text-transform:uppercase;text-align:center;color:#fff">'+
+  '<button class="cta full shine" type="button" data-act="codeSend">Enviar solicitud</button><div class="small" id="fcMsg" style="text-align:center"></div></div>','Añadir por código');}
+function inboxHtml(){if(!srv.inbox.length)return '';return '<div class="box" style="gap:8px;box-shadow:inset 0 0 0 2px rgba(245,197,66,.6)"><b>🙋 Solicitudes de amistad</b>'+srv.inbox.map(function(q){return '<div class="row" style="gap:8px">'+av(q.a&&avSrc(q.a)?'@'+q.a:initials(q.n),fcol(q.n),36)+'<span class="grow">'+esc(q.n)+'</span><button class="cta" type="button" data-srq-ok="'+q.id+'" style="min-height:34px;font-size:13px;padding:0 12px">Aceptar</button><button class="cta ghost" type="button" data-srq-no="'+q.id+'" style="min-height:34px;font-size:13px;padding:0 10px">✕</button></div>';}).join('')+'</div>';}
 function retoWins(){var w=0;Object.keys(friends()).forEach(function(k){w+=h2h(friends()[k].n).w;});return w;}
 function myTitle(){var L=S.level,t=L>=30?'Leyenda':L>=20?'Maestro':L>=10?'Veterano':L>=5?'Aspirante':'Novato';
   var best=null,bv=0;GKEYS.forEach(function(g){var r=S.record[g];if(r&&GAMES[g].par){var v=r/GAMES[g].par;if(v>bv){bv=v;best=g;}}});
@@ -1237,7 +1338,7 @@ function saveFriend(){
 function delFriend(){var F=friends();if(editingFriend&&F[editingFriend]){var n=F[editingFriend].n;delete F[editingFriend];save();closeModal();render();toast(n+' quitado de tus rivales');}}
 function friendsHtml(){
   var L=Object.keys(friends()).map(function(k){return friends()[k];}).sort(function(a,b){return (b.fav-a.fav)||(b.t-a.t);});
-  var h='<div class="sec"><span>Rivales favoritos</span><span class="row" style="gap:6px"><button class="gbtn" type="button" data-act="inviteFriend" style="height:30px;font-size:12px">Invitar</button><button class="gbtn" type="button" data-act="addFriend" style="height:30px;font-size:12px">+ Añadir</button></span></div>';
+  var h='<div class="sec"><span>Rivales favoritos</span><span class="row" style="gap:6px"><button class="gbtn" type="button" data-act="inviteFriend" style="height:30px;font-size:12px">Invitar</button>'+(srvOn()?'<button class="gbtn" type="button" data-act="codeAdd" style="height:30px;font-size:12px">Código</button>':'<button class="gbtn" type="button" data-act="addFriend" style="height:30px;font-size:12px">+ Añadir</button>')+'</span></div>'+inboxHtml();
   if(!L.length)return h+'<div class="box alt" style="text-align:center"><span class="small">Envía una solicitud con «Invitar»: cuando tu amigo la acepte, aparecerá aquí. También se añade quien te rete o conteste tus retos.</span></div>';
   h+='<ul class="list">';
   L.forEach(function(f){var k=fkey(f.n),r=h2h(f.n);
@@ -1274,7 +1375,7 @@ function avStack(members,size){return '<span class="avstack">'+members.slice(0,5
 function inviteFriend(){
   needAlias(function(){
     var id=rid();reqs().unshift({id:id,t:Date.now(),ok:[]});if(S.reqs.length>20)S.reqs.length=20;save();
-    var url=baseUrl()+'#amigo='+enc({v:1,k:'req',id:id,n:myAlias(),a:myAvKey()});
+    var url=baseUrl()+'#amigo='+enc({v:1,k:'req',id:id,n:myAlias(),a:myAvKey(),u:meId()||undefined});
     shareModal('Solicitud de amistad',myAlias()+' quiere ser tu rival en MundiCash Juegos 🤝 Acepta y nos picamos con retos:',url);
   });
 }
@@ -1288,7 +1389,7 @@ function incomingFriend(p){
     return;
   }
   var known=!!friends()[fkey(n)]&&friends()[fkey(n)].fav;
-  pendingReq={id:p.id,n:n,a:p.a||''};
+  pendingReq={id:p.id,n:n,a:p.a||'',u:p.u||null};
   openModal('<div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">'+av(p.a&&avSrc(p.a)?'@'+p.a:initials(n),fcol(n),88,'border:4px solid #F5C542')+
     '<span class="eye" style="color:var(--gold)">Solicitud de amistad</span><span class="t1" style="font-size:24px">'+esc(n)+' quiere ser tu rival</span>'+
     '<span class="small">Al aceptar le tendrás en tus rivales favoritos y podrás retarle con un toque. Después le mandas la confirmación por WhatsApp.</span>'+
@@ -1300,12 +1401,14 @@ function acceptReq(){
   var q=pendingReq;if(!q)return;
   needAlias(function(){
     var f=addFriend(q.n,q.a);f.fav=true;save();render();
+    if(q.u&&srvOn()&&q.u!==meId()){f.uid=q.u;save();sb.from('friend_requests').upsert({from_id:meId(),to_id:q.u,status:'accepted'},{onConflict:'from_id,to_id'}).then(function(r){if(!r.error){srvRefresh();closeModal();toast('🤝 ¡'+q.n+' y tú ya sois rivales!');}});
+      openModal('<div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">'+av(friendIni(q.n),fcol(q.n),88,'border:4px solid #5BE07D')+'<span class="t1" style="font-size:24px">¡'+esc(q.n)+' ya es tu rival!</span><span class="small">Os llegarán los retos directamente en la app.</span><button class="cta full shine" type="button" data-fr-reto="'+esc(fkey(q.n))+'">Retar a '+esc(q.n)+'</button></div>','Nuevo rival');return;}
     var url=baseUrl()+'#amigo='+enc({v:1,k:'ok',id:q.id,n:myAlias(),a:myAvKey()});
     shareModal('Confirma a '+esc(q.n),myAlias()+' ha aceptado tu solicitud. ¡Ya somos rivales! 😈 Abre esto para tenerme en tu lista:',url);
   });
 }
 function circleMembersMe(c){var me=myAlias(),has=c.members.some(function(m){return fkey(m.n)===fkey(me);});if(!has)c.members.push({n:me,a:myAvKey()});else c.members.forEach(function(m){if(fkey(m.n)===fkey(me))m.a=myAvKey();});}
-function circleLink(c){return baseUrl()+'#circulo='+enc({v:1,id:c.id,name:c.name,o:c.owner,m:c.members.map(function(m){return {n:m.n,a:m.a||''};})});}
+function circleLink(c){return baseUrl()+'#circulo='+enc({v:1,id:c.id,sid:c.sid||undefined,name:c.name,o:c.owner,m:c.members.map(function(m){return {n:m.n,a:m.a||''};})});}
 function createCircleModal(){
   needAlias(function(){
     var L=Object.keys(friends()).map(function(k){return friends()[k];}).sort(function(a,b){return (b.fav-a.fav)||(b.t-a.t);});
@@ -1319,13 +1422,17 @@ function saveCircle(){
   var name=(($('ciName')&&$('ciName').value)||'').trim().replace(/\s+/g,' ');if(name.length<2){toast('Ponle un nombre al círculo');return;}
   var c={id:rid(),name:name.slice(0,24),owner:myAlias(),members:[],t:Date.now()};
   Array.prototype.forEach.call(document.querySelectorAll('.cilist input:checked'),function(i){var f=friends()[i.value];if(f)c.members.push({n:f.n,a:f.a||''});});
-  circleMembersMe(c);circles()[c.id]=c;save();render();
+  circleMembersMe(c);
+  if(srvOn()){sb.from('circles').insert({name:c.name,owner:meId()}).select('id').single().then(function(r){if(r.error||!r.data){circles()[c.id]=c;save();render();return;}
+      c.id=r.data.id;c.sid=r.data.id;circles()[c.id]=c;save();sb.from('circle_members').insert({circle_id:c.sid,user_id:meId()}).then(function(){srvRefresh();});render();
+      shareModal('Invita a «'+esc(c.name)+'»','Te invito a mi círculo de rivales «'+c.name+'» en MundiCash Juegos 🏆 Entra, únete y a ver quién manda:',circleLink(c));});return;}
+  circles()[c.id]=c;save();render();
   shareModal('Invita a «'+esc(c.name)+'»','Te invito a mi círculo de rivales «'+c.name+'» en MundiCash Juegos 🏆 Entra, únete y a ver quién manda:',circleLink(c));
 }
 function incomingCircle(p){
-  if(!p||!p.id||!p.name||!p.m)return;
+  if(!p||!p.id||!p.name||!p.m)return;if(p.sid)p.id=p.sid;
   var c=circles()[p.id],isNew=!c,me=fkey(myAlias());
-  if(!c){c={id:p.id,name:String(p.name).slice(0,24),owner:String(p.o||'').slice(0,16),members:[],t:Date.now(),joined:false};}
+  if(!c){c={id:p.id,sid:p.sid||undefined,name:String(p.name).slice(0,24),owner:String(p.o||'').slice(0,16),members:[],t:Date.now(),joined:false};}
   var before=c.members.length;
   p.m.forEach(function(m){if(!m||!m.n)return;var n=String(m.n).slice(0,16);var ex=null;c.members.forEach(function(x){if(fkey(x.n)===fkey(n))ex=x;});if(ex){if(m.a)ex.a=m.a;}else c.members.push({n:n,a:m.a||''});});
   var amIn=c.joined||c.members.some(function(x){return fkey(x.n)===me&&S.alias;});
@@ -1342,6 +1449,7 @@ function joinCircle(){
   var c=pendingCircle;if(!c)return;
   needAlias(function(){
     c.joined=true;circleMembersMe(c);circles()[c.id]=c;
+    if(c.sid&&srvOn()){sb.from('circle_members').insert({circle_id:c.sid,user_id:meId()}).then(function(){srvRefresh();});save();render();closeModal();toast('💪 ¡Ya estás en «'+c.name+'»!');setTimeout(function(){circleModal(c.id);},400);return;}
     var me=fkey(myAlias());c.members.forEach(function(m){if(fkey(m.n)!==me){var f=addFriend(m.n,m.a);f.fav=true;}});save();render();
     shareModal('Avisa al grupo','¡'+myAlias()+' se ha unido a «'+c.name+'»! 💪 Abrid este enlace para tenerme en el círculo:',circleLink(c));
   });
@@ -1373,7 +1481,7 @@ function circleModal(id){
   h+='<div class="sec" style="margin:0"><span>Mejores marcas del círculo</span></div>';
   h+=rows.length?'<ul class="list">'+rows.map(function(x){return '<li class="hrow'+(x.me?' me':'')+'"><img src="'+IMG[x.g]+'" alt=""><div class="grow"><div class="t2" style="font-size:14px">'+GAMES[x.g].short+'</div><div class="small" style="color:#fff">'+esc(x.n)+(x.me?' (tú)':'')+'</div></div><b style="font-size:18px">'+fmt(x.s)+'</b></li>';}).join('')+'</ul>':
     '<div class="box alt"><span class="small">Aún no hay marcas. Lanza un reto al círculo y aquí irán apareciendo.</span></div>';
-  h+='<p class="note" style="margin:0">Las marcas salen de tus récords y de los retos que te llegan. Cada móvil ve los retos en los que ha participado.</p>';
+  h+='<p class="note" style="margin:0">'+(c.sid&&srvOn()?'Círculo online: miembros, retos y reto del día se actualizan en directo para todos.':'Las marcas salen de tus récords y de los retos que te llegan. Cada móvil ve los retos en los que ha participado.')+'</p>';
   h+='<button class="cta ghost full" type="button" data-ci-share="'+c.id+'">Invitar a más gente</button><button class="cta ghost full" type="button" data-ci-leave="'+c.id+'">Salir del círculo</button></div>';
   openModal(h,'«'+c.name+'»','bottom');
 }
@@ -1381,7 +1489,7 @@ function circleModal(id){
 function hstr(t){var h=2166136261;for(var i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
 function cdaily(c){var d=today(),h=hstr(c.id+'|'+d);if(!c.daily||c.daily.d!==d)c.daily={d:d,s:{},t:0};return {d:d,g:GKEYS[h%GKEYS.length],seed:(h%2147480000)+7,sc:c.daily.s,tries:c.daily.t||0};}
 var DAILY_TRIES=3;
-function dailyGo(id){var c=circles()[id];if(!c)return false;var D=cdaily(c);if(D.tries>=DAILY_TRIES){toast('Ya has usado tus '+DAILY_TRIES+' intentos de hoy. ¡Mañana hay reto nuevo!');return false;}c.daily.t=D.tries+1;save();launch(D.g,'prac',STAKES[0],null,null,D.seed,{circleDaily:id,cday:D.d});return true;}
+function dailyGo(id){var c=circles()[id];if(!c)return false;var D=cdaily(c);if(D.tries>=DAILY_TRIES){toast('Ya has usado tus '+DAILY_TRIES+' intentos de hoy. ¡Mañana hay reto nuevo!');return false;}c.daily.t=D.tries+1;save();srvDaily(c);launch(D.g,'prac',STAKES[0],null,null,D.seed,{circleDaily:id,cday:D.d});return true;}
 function cdRows(c){var D=cdaily(c),me=fkey(myAlias());return Object.keys(D.sc).map(function(k){var v=D.sc[k];return {n:v.n,a:v.a,s:v.s,me:k===me};}).sort(function(a,b){return b.s-a.s;});}
 function cdPos(c){var L=cdRows(c);for(var i=0;i<L.length;i++)if(L[i].me)return {pos:i+1,of:L.length};return null;}
 function dailyHtml(c,compact){var D=cdaily(c),L=cdRows(c),mine=D.sc[fkey(myAlias())];
@@ -1549,8 +1657,8 @@ function onEnd(score){
   addXP(xp);S.prestige+=pr;
   S.hist.unshift(entry);if(S.hist.length>40)S.hist.length=40;
   save();
-  if(ctx.mode==='reto'&&ctx.retoKey){var rr=retoByKey(ctx.retoKey);if(rr){rr.tp=Date.now();if(rr.mine==null||score>rr.mine)rr.mine=score;save();}}
-  if(ctx.circleDaily){var cD=circles()[ctx.circleDaily];if(cD&&ctx.cday===today()){var DD=cdaily(cD),kk=fkey(myAlias());if(!DD.sc[kk]||score>DD.sc[kk].s)DD.sc[kk]={n:myAlias(),a:myAvKey(),s:score};save();}}
+  if(ctx.mode==='reto'&&ctx.retoKey){var rr=retoByKey(ctx.retoKey);if(rr){rr.tp=Date.now();if(rr.mine==null||score>rr.mine)rr.mine=score;save();if(rr.sid)srvResult(rr.sid,rr.mine);}}
+  if(ctx.circleDaily){var cD=circles()[ctx.circleDaily];if(cD&&ctx.cday===today()){var DD=cdaily(cD),kk=fkey(myAlias());if(!DD.sc[kk]||score>DD.sc[kk].s)DD.sc[kk]={n:myAlias(),a:myAvKey(),s:score};save();srvDaily(cD);}}
   ctx.result={score:score,rs:rs,win:win,xp:xp,pr:pr,newRec:newRec,copaLine:copaLine,prize:prize,sent:false};
   sheetTimer=setTimeout(showSheet,1500);
 }
@@ -1760,7 +1868,7 @@ window.addEventListener('blur',function(){release({type:'pointercancel'});});
 document.addEventListener('click',function(e){if(e.detail===0){var b=e.target.closest&&e.target.closest(PUSH);if(b&&!pushOff(b))spring(b,b.matches('a.mc,.feat,.opt'));}},true);
 document.addEventListener('click',function(e){
   if(vsBusy)return;
-  var t=e.target.closest('[data-act],[data-go],[data-pick],[data-stake],[data-claim],[data-comp],[data-rank],[data-copa-open],[data-copa-play],[data-shop],[data-st],[data-buy],[data-pack],[data-send],[data-replay],[data-reto-play],[data-reto-new],[data-reto-resend],[data-wa],[data-wa-share],[data-wa-resp],[data-stcat],[data-avsel],[data-fr-edit],[data-fr-fav],[data-fr-reto],[data-fr-game],[data-ci-open],[data-ci-reto],[data-ci-game],[data-ci-share],[data-ci-leave],[data-ci-daily],[data-ci-dshare],[data-ci-board],[data-dr-claim],[data-reto-ans],[data-dsex],[data-dcat],[data-ditem],[data-sktry],[data-help],[data-onbav]');
+  var t=e.target.closest('[data-act],[data-go],[data-pick],[data-stake],[data-claim],[data-comp],[data-rank],[data-copa-open],[data-copa-play],[data-shop],[data-st],[data-buy],[data-pack],[data-send],[data-replay],[data-reto-play],[data-reto-new],[data-reto-resend],[data-wa],[data-wa-share],[data-wa-resp],[data-stcat],[data-avsel],[data-fr-edit],[data-fr-fav],[data-fr-reto],[data-fr-game],[data-ci-open],[data-ci-reto],[data-ci-game],[data-ci-share],[data-ci-leave],[data-ci-daily],[data-ci-dshare],[data-ci-board],[data-dr-claim],[data-reto-ans],[data-srq-ok],[data-srq-no],[data-dsex],[data-dcat],[data-ditem],[data-sktry],[data-help],[data-onbav]');
   if(!t)return;var a=t.dataset;
   if(a.go){closeModal();if(location.hash==='#'+a.go)route();else location.hash=a.go;return;}
   if(a.pick){stakePicker(a.pick);return;}
@@ -1782,6 +1890,8 @@ document.addEventListener('click',function(e){
   if(a.ciOpen){circleModal(a.ciOpen);return;}
   if(a.ciDaily){playDaily(a.ciDaily);return;}
   if(a.ciBoard){shareBoard(a.ciBoard);return;}
+  if(a.srqOk){srvReq(a.srqOk,true);return;}
+  if(a.srqNo){srvReq(a.srqNo,false);return;}
   if(a.retoAns){sendRespFor(a.retoAns);return;}
   if(a.help){helpGo(a.help);return;}
   if(a.onbav){S.avatar=a.onbav;if(S.sk)S.sk.on=false;save();renderHdr();onbRender();return;}
@@ -1794,7 +1904,7 @@ document.addEventListener('click',function(e){
   if(a.ciReto){circleRetoPicker(a.ciReto);return;}
   if(a.ciGame){var cid=pendingCircle&&pendingCircle.id;closeModal();launch(a.ciGame,'prac',STAKES[0],null,null,null,{forReto:true,forCircle:cid});return;}
   if(a.ciShare){var c3=circles()[a.ciShare];if(c3){circleMembersMe(c3);save();shareModal('Invita a «'+esc(c3.name)+'»','Te invito a mi círculo de rivales «'+c3.name+'» en MundiCash Juegos 🏆 Entra, únete y a ver quién manda:',circleLink(c3));}return;}
-  if(a.ciLeave){var c4=circles()[a.ciLeave];if(c4){delete circles()[a.ciLeave];save();closeModal();render();toast('Has salido de «'+c4.name+'»');}return;}
+  if(a.ciLeave){var c4=circles()[a.ciLeave];if(c4){if(c4.sid&&srvOn())sb.from('circle_members').delete().eq('circle_id',c4.sid).eq('user_id',meId()).then(function(){});delete circles()[a.ciLeave];save();closeModal();render();toast('Has salido de «'+c4.name+'»');}return;}
   if(a.frEdit){friendModal(a.frEdit);return;}
   if(a.frFav){var ff=friends()[a.frFav];if(ff){ff.fav=!ff.fav;save();render();}return;}
   if(a.frReto){friendRetoPicker(a.frReto);return;}
@@ -1827,6 +1937,9 @@ document.addEventListener('click',function(e){
     case 'backupRead':readBackup(($('bkIn')||{}).value).then(backupAsk).catch(function(){toast('No reconozco ese código. Pega el enlace completo.');});break;
     case 'backupApply':backupApply();break;
     case 'acctLink':emailModal('link');break;
+    case 'codeAdd':codeModal();break;
+    case 'codeSend':srvAddByCode(($('fcIn')||{}).value);break;
+    case 'copyCode':try{navigator.clipboard.writeText(S.fcode||'');toast('Código copiado: '+S.fcode);}catch(e){toast('Tu código: '+S.fcode);}break;
     case 'acctLogin':emailModal('login');break;
     case 'acctLinkGo':acctSend('link');break;
     case 'acctLoginGo':acctSend('login');break;
